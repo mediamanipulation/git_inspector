@@ -1,0 +1,14 @@
+[
+  {
+    "folder": "my-static-website-demo-main",
+    "file": "index.html",
+    "line": 37,
+    "match": "<input type=\"text\" id=\"name\" name=\"name\" required>"
+  },
+  {
+    "folder": "my-static-website-demo-main",
+    "file": "index.html",
+    "line": 41,
+    "match": "<input type=\"email\" id=\"email\" name=\"email\" required>"
+  }
+]

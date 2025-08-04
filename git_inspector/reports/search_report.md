@@ -1,0 +1,4 @@
+| Folder | File | Line | Match |
+|--------|------|------|-------|
+| my-static-website-demo-main | index.html | 37 | `<input type="text" id="name" name="name" required>` |
+| my-static-website-demo-main | index.html | 41 | `<input type="email" id="email" name="email" required>` |
