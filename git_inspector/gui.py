@@ -4,11 +4,14 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 
-from core.browse import ask_directory
-from core.history import load_history, save_history
-from core.searcher import search_repo
-from core.reporter import (
-    save_json_report, save_txt_report, save_md_report, compute_summary
+from core.browse    import ask_directory
+from core.history   import load_history, save_history
+from core.searcher  import search_repo
+from core.reporter  import (
+    save_json_report,
+    save_txt_report,
+    save_md_report,
+    compute_summary
 )
 
 class InspectorGUI(tk.Tk):
@@ -17,81 +20,151 @@ class InspectorGUI(tk.Tk):
         self.title("Git Inspector GUI")
         self.geometry("900x600")
         self.results = []
-        self._build()
+        self.current_pattern = ""
+        self._create_widgets()
         self._load_history()
 
-    def _build(self):
-        frm = ttk.Frame(self, padding=10)
-        frm.pack(fill=tk.X)
-        # History
-        ttk.Label(frm, text="History:").grid(row=0, column=0)
-        self.history_cb = ttk.Combobox(frm, state='readonly', width=50)
-        self.history_cb.grid(row=0, column=1, columnspan=2)
-        self.history_cb.bind('<<ComboboxSelected>>', self._on_history)
-        # Repo
-        ttk.Label(frm, text="Repo:").grid(row=1, column=0)
-        self.repo_e = ttk.Entry(frm, width=50)
-        self.repo_e.grid(row=1, column=1)
-        ttk.Button(frm, text="Browse", command=lambda: self._set(self.repo_e, ask_directory())).grid(row=1, column=2)
-        # Pattern
-        ttk.Label(frm, text="Pattern:").grid(row=2, column=0)
-        self.pat_e = ttk.Entry(frm, width=50)
-        self.pat_e.grid(row=2, column=1, columnspan=2)
-        # Exts
-        ttk.Label(frm, text="Exts:").grid(row=3, column=0)
-        self.ext_e = ttk.Entry(frm, width=50)
-        self.ext_e.insert(0, ".html .hbs")
-        self.ext_e.grid(row=3, column=1, columnspan=2)
-        # Buttons
-        ttk.Button(frm, text="Run", command=self._run).grid(row=4, column=1)
-        ttk.Button(frm, text="Summary", command=self._summary).grid(row=4, column=2)
-        # Tree
-        cols = ('folder','file','line','match')
-        self.tree = ttk.Treeview(self, columns=cols, show='headings')
-        for c in cols:
-            self.tree.heading(c, text=c)
-            self.tree.column(c, width=200 if c!='match' else 400)
-        self.tree.pack(expand=True, fill=tk.BOTH)
+    def _create_widgets(self):
+        container = ttk.Frame(self, padding=10)
+        container.pack(fill=tk.X)
 
-    def _set(self, entry, val):
-        entry.delete(0, tk.END); entry.insert(0, val)
+        # History dropdown
+        ttk.Label(container, text="Previous Searches:").grid(row=0, column=0, sticky=tk.W)
+        self.history_var = tk.StringVar()
+        self.history_cb = ttk.Combobox(
+            container, textvariable=self.history_var, state="readonly", width=50
+        )
+        self.history_cb.grid(row=0, column=1, columnspan=2, sticky=tk.W)
+        self.history_cb.bind("<<ComboboxSelected>>", self._on_history)
+
+        # Repo path
+        ttk.Label(container, text="Repo Path:").grid(row=1, column=0, sticky=tk.W)
+        self.repo_entry = ttk.Entry(container, width=50)
+        self.repo_entry.grid(row=1, column=1, sticky=tk.W)
+        ttk.Button(
+            container, text="Browse…", command=self._browse_repo
+        ).grid(row=1, column=2, padx=5)
+
+        # Search pattern
+        ttk.Label(container, text="Pattern (regex):").grid(row=2, column=0, sticky=tk.W)
+        self.pattern_entry = ttk.Entry(container, width=50)
+        self.pattern_entry.grid(row=2, column=1, columnspan=2, sticky=tk.W)
+
+        # Extensions
+        ttk.Label(container, text="Extensions:").grid(row=3, column=0, sticky=tk.W)
+        self.ext_entry = ttk.Entry(container, width=50)
+        self.ext_entry.insert(0, ".html .hbs")
+        self.ext_entry.grid(row=3, column=1, columnspan=2, sticky=tk.W)
+
+        # Run + Summary buttons
+        ttk.Button(
+            container, text="Run Search", command=self._run_search
+        ).grid(row=4, column=1, pady=10)
+        ttk.Button(
+            container, text="Show Summary", command=self._show_summary
+        ).grid(row=4, column=2, pady=10)
+
+        # Results treeview
+        columns = ("folder", "file", "line", "match")
+        self.tree = ttk.Treeview(self, columns=columns, show="headings")
+        for col in columns:
+            width = 350 if col == "match" else 150
+            self.tree.heading(col, text=col.capitalize())
+            self.tree.column(col, width=width, anchor=tk.W)
+        self.tree.pack(expand=True, fill=tk.BOTH, padx=10, pady=(0,10))
 
     def _load_history(self):
-        hist = load_history()
-        opts = ['<New>'] + [f"{h['pattern']}@{Path(h['repo']).name}" for h in hist]
-        self.history_cb['values'] = opts; self.history_cb.current(0)
+        self.history = load_history()
+        options = ["<New Search>"] + [
+            f"{h['pattern']} @ {Path(h['repo']).name}" for h in self.history
+        ]
+        self.history_cb["values"] = options
+        self.history_cb.current(0)
 
-    def _on_history(self, e):
-        idx = self.history_cb.current()-1
-        if idx>=0:
-            h = load_history()[idx]
-            self._set(self.repo_e, h['repo'])
-            self._set(self.pat_e, h['pattern'])
-            self._set(self.ext_e, ' '.join(h['extensions']))
+    def _on_history(self, _):
+        idx = self.history_cb.current() - 1
+        if idx >= 0:
+            entry = self.history[idx]
+            self.repo_entry.delete(0, tk.END);     self.repo_entry.insert(0, entry["repo"])
+            self.pattern_entry.delete(0, tk.END);  self.pattern_entry.insert(0, entry["pattern"])
+            self.ext_entry.delete(0, tk.END);      self.ext_entry.insert(0, " ".join(entry["extensions"]))
 
-    def _run(self):
-        repo, pat, exts = self.repo_e.get(), self.pat_e.get(), self.ext_e.get().split()
-        self.results = search_repo(repo, pat, exts)
-        # populate
-        for i in self.tree.get_children(): self.tree.delete(i)
+    def _browse_repo(self):
+        start = self.repo_entry.get() or "."
+        directory = ask_directory(initial_dir=start, title="Select Repository")
+        if directory:
+            self.repo_entry.delete(0, tk.END)
+            self.repo_entry.insert(0, directory)
+
+    def _run_search(self):
+        repo    = self.repo_entry.get().strip()
+        pattern = self.pattern_entry.get().strip()
+        exts    = self.ext_entry.get().split()
+        if not repo or not pattern:
+            messagebox.showerror("Error", "Repo path and pattern are required.")
+            return
+
+        # Search
+        self.results = search_repo(repo, pattern, exts)
+        self.current_pattern = pattern
+
+        # Populate results
+        for item in self.tree.get_children():
+            self.tree.delete(item)
         for m in self.results:
-            self.tree.insert('', tk.END, values=(m['folder'],m['file'],m['line'],m['match'][:80]))
-        # reports
-        out = Path('reports'); out.mkdir(exist_ok=True)
-        save_json_report(self.results, out/'search_report.json')
-        save_txt_report(self.results, out/'search_report.txt')
-        save_md_report(self.results, out/'search_report.md')
-        # summary
+            self.tree.insert(
+                "", tk.END,
+                values=(m["folder"], m["file"], m["line"], m["match"][:80])
+            )
+
+        # Save reports + summary
+        outdir = Path("reports"); outdir.mkdir(exist_ok=True)
+        save_json_report(self.results,    outdir/"search_report.json")
+        save_txt_report(self.results,     outdir/"search_report.txt")
+        save_md_report(self.results,      outdir/"search_report.md")
         summary = compute_summary(self.results)
-        (out/'search_summary.json').write_text(json.dumps(summary, indent=2))
-        save_history(repo, pat, exts)
+        (outdir/"search_summary.json").write_text(json.dumps(summary, indent=2))
+        save_history(repo, pattern, exts)
 
-    def _summary(self):
-        if not self.results: return
-        sumd = compute_summary(self.results)
-        top = tk.Toplevel(self); top.title('Summary'); txt = tk.Text(top); txt.pack(expand=True, fill=tk.BOTH)
-        txt.insert('end', json.dumps(sumd, indent=2))
-        txt.config(state='disabled')
+        messagebox.showinfo("Done", f"{len(self.results)} matches. Reports in {outdir.absolute()}")
 
-if __name__=='__main__':
-    InspectorGUI().mainloop()
+    def _show_summary(self):
+        if not self.results:
+            messagebox.showwarning("No Data", "Run a search first.")
+            return
+        summary = compute_summary(self.results)
+        win = tk.Toplevel(self); win.title("Search Summary"); win.geometry("600x500")
+        text = tk.Text(win, wrap="none", padx=10, pady=10); text.pack(expand=True, fill=tk.BOTH)
+
+        total = summary["total"]
+        text.insert("end", f"Pattern: {self.current_pattern}\nTotal Matches: {total}\n\n")
+
+        # Per-file
+        text.insert("end", "📂 Matches by File:\n")
+        text.insert("end", "File".ljust(50) + "Count   %\n")
+        text.insert("end", "-"*70 + "\n")
+        for f, cnt in summary["per_file"].items():
+            pct = cnt/total*100
+            text.insert("end", f"{f.ljust(50)} {cnt:3d}  {pct:5.1f}%\n")
+
+        # Per-dir
+        text.insert("end", "\n🌐 Matches by Directory:\n")
+        text.insert("end", "Dir".ljust(50) + "Count   %\n")
+        text.insert("end", "-"*70 + "\n")
+        for d, cnt in summary["per_directory"].items():
+            pct = cnt/total*100
+            text.insert("end", f"{d.ljust(50)} {cnt:3d}  {pct:5.1f}%\n")
+
+        # Full-path
+        text.insert("end", "\n🌳 Full-path Roll-up:\n")
+        text.insert("end", "Path".ljust(50) + "Count   %\n")
+        text.insert("end", "-"*70 + "\n")
+        for d, cnt in summary["full_directory"].items():
+            pct = cnt/total*100
+            text.insert("end", f"{d.ljust(50)} {cnt:3d}  {pct:5.1f}%\n")
+
+        text.config(state="disabled")
+
+if __name__ == "__main__":
+    app = InspectorGUI()
+    app.mainloop()
