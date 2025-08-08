@@ -1,30 +1,34 @@
-# searcher.py
-
+# core/searcher.py
+import os
 import re
-from pathlib import Path
+from typing import List, Dict
 
-def search_repo(repo_path, pattern, extensions):
-    repo_path = Path(repo_path).resolve()
-    regex = re.compile(pattern)
-    matches = []
-
-    for filepath in repo_path.rglob("*"):
-        if not filepath.is_file():
-            continue
-        if not any(filepath.name.endswith(ext) for ext in extensions):
-            continue
-
-        try:
-            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-                for i, line in enumerate(f, 1):
-                    if regex.search(line):
-                        relative_path = filepath.relative_to(repo_path)
-                        matches.append({
-                            "folder": str(relative_path.parent),
-                            "file": filepath.name,
-                            "line": i,
-                            "match": line.strip()
-                        })
-        except Exception as e:
-            print(f"⚠️ Error reading {filepath}: {e}")
-    return matches
+def search_repo(
+    base_dir: str,
+    pattern: str,
+    exts: List[str],
+    use_regex: bool = True
+) -> List[Dict]:
+    """
+    Recursively search files under base_dir for pattern in specified extensions.
+    Returns list of dicts with keys: folder, file, line, match.
+    """
+    results = []
+    matcher = re.compile(pattern) if use_regex else None
+    for root, _, files in os.walk(base_dir):
+        for fname in files:
+            if any(fname.endswith(ext) for ext in exts):
+                path = os.path.join(root, fname)
+                try:
+                    with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                        for lineno, line in enumerate(f, start=1):
+                            if (matcher.search(line) if matcher else pattern in line):
+                                results.append({
+                                    'folder': root,
+                                    'file': fname,
+                                    'line': lineno,
+                                    'match': line.strip()
+                                })
+                except Exception:
+                    continue
+    return results
