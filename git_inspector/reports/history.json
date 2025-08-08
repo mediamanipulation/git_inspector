@@ -1,5 +1,13 @@
 [
   {
+    "repo": "",
+    "pattern": "",
+    "extensions": [
+      ".html",
+      ".hbs"
+    ]
+  },
+  {
     "repo": "E:\\python-ws\\gitrepo\\.venv\\app\\tarot-main",
     "pattern": "class WorkerAgentSignature(dspy.Signature):",
     "extensions": [
